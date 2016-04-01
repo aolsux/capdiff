@@ -431,7 +431,7 @@ PrecalculatedField2D calculateField(double cutOff, unsigned fieldRes, double wid
 						/ (dif.absPow2() * dif.absPow2());
 
 			}
-			field(xdot, ydot) = (isnan(val) | isinf(val))? 0.0 : val;
+			field(xdot, ydot) = (std::isnan(val) | std::isinf(val))? 0.0 : val;
 			pbar->progress();
 
 		}
