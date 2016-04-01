@@ -18,9 +18,7 @@
 RandomNumberGenerator::RandomNumberGenerator(unsigned long seed):
 	rank					(omp_get_thread_num()),
 	initialSeed				((seed == 1) ? ((unsigned long) (time(NULL)))*(rank+1) : seed),
-	gen						(initialSeed),
-	norm_distrib_rnd		(gen, norm),
-	uniform_distrib_rnd		(gen, uniform)
+	gen						(initialSeed)
 {
 	cout<< "rng's rank:\t"<<rank<<"\tseed:"<<initialSeed<<endl;
 }
@@ -32,13 +30,13 @@ unsigned long RandomNumberGenerator::getInitialSeed() const {
 }
 
 double RandomNumberGenerator::getNormalDistributed(const double &s, const double &m) const {
-	return norm_distrib_rnd()*s+m;
+	return norm(gen)*s+m;
 }
 
 Point RandomNumberGenerator::getNormalDistributedPoint(const double &s, const double &m) const {
-	return Point(norm_distrib_rnd()*s+m, norm_distrib_rnd()*s+m);
+	return Point(norm(gen)*s+m, norm(gen)*s+m);
 }
 
 double RandomNumberGenerator::getUniform() const {
-	return uniform_distrib_rnd();
+	return uniform(gen);
 }

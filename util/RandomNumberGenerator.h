@@ -8,6 +8,8 @@
 #ifndef RANDOMNUMBERGENERATOR_H_
 #define RANDOMNUMBERGENERATOR_H_
 
+#include <random>
+
 #include <float.h>
 #include <limits.h>
 #include <iostream>
@@ -18,6 +20,8 @@
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/variate_generator.hpp>
 #include "Point.h"
+
+
 
 using namespace std;
 
@@ -52,11 +56,9 @@ private:
 	unsigned int rank;
 	unsigned long initialSeed;
 
-	boost::normal_distribution<double> norm;
-	boost::uniform_real<double> uniform;
-	mutable boost::rand48 gen;
-	mutable boost::variate_generator<boost::rand48&, boost::normal_distribution<double> > norm_distrib_rnd;
-	mutable boost::variate_generator<boost::rand48&, boost::uniform_real<double> > uniform_distrib_rnd;
+	mutable std::normal_distribution<double> norm;
+	mutable std::uniform_real_distribution<double> uniform;
+	mutable std::ranlux48 gen;
 };
 
 //template<>
