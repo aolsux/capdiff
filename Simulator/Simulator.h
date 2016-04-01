@@ -59,7 +59,7 @@ class Simulator: public Describable
 		 */
 		Matrix2D getErrorMap(unsigned n, double sigma);
 
-		static const double STEPLENGTH_RADIUS_RATIO = 4;
+		static constexpr double STEPLENGTH_RADIUS_RATIO = 4;
 
 		/*Various getters.*/
 			  unsigned 					getTimeSteps() 				const;
