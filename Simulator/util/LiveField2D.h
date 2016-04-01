@@ -42,9 +42,6 @@ private:
 	CapillaryConfiguration capillaryConfiguration;
 };
 
-ostream& operator <<(ostream &os, const LiveField2D &obj) {
-	os << obj.capillaryConfiguration;
-	return os;
-}
+
 
 #endif /* LIVEFIELD2D_H_ */
