@@ -70,6 +70,7 @@ double		histo_omega_cutoff	= numeric_limits<double>::max();
 unsigned	histo_bins			= 10000;
 unsigned	shrink_factor		= 1;
 double		scaling				= 1;
+bool        force_write         = false;
 string capillaryFileName = "";
 string fieldFileName = "";
 
@@ -87,8 +88,6 @@ int main(int argc, char* argv[])
 	bool mask_threshold_set = false;
 	bool width_set			= false;
 	bool height_set			= false;
-	bool force_write		= false;
-
 
 
 	//iterate over params and search for field params
@@ -168,10 +167,10 @@ int main(int argc, char* argv[])
 				", cutoff=" << cutoff << ")"<<endl;
 		field = calculateField(cutoff, field_res, width, height);
 		string fieldFileName = capillaryFileName.substr(0,capillaryFileName.find('.')) +
-				"_width=" + util::num2str(width)+
-				"_height=" +  util::num2str(height)+
-				"_res=" +  util::num2str(field_res)+
-				"_cor=" +  util::num2str(cutoff)+".csv";
+				"_width=" + std::to_string(width)+
+				"_height=" +  std::to_string(height)+
+				"_res=" +  std::to_string(field_res)+
+				"_cor=" +  std::to_string(cutoff)+".csv";
 		cout << "Writing Field-File " << fieldFileName << " ...";
 		fstream out_file(fieldFileName.c_str(), ios::out);
 		out_file << field;
@@ -413,10 +412,15 @@ void printHelp()
 PrecalculatedField2D calculateField(double cutOff, unsigned fieldRes, double width, double height)
 {
 	CapillaryConfiguration conf = mirrorCapillaries(capillaries,Rectangle(Point(0,0),Point(width, height)), cutOff);
+	if (force_write)
+	{
+		std::ofstream mconf("mirrorer_capillaries.csv");
+		mconf << conf;
+	}
 	PrecalculatedField2D field(Point(0,0),Point(width, height), 1. / fieldRes);
 	ProgressBar *pbar=new ProgressBar("Calculating field (" + util::num2str(nthreads) + " CPUs)", field.columns * field.lines);
 	pmon.addProgressBar(pbar);
-#pragma omp parallel for shared(pbar,field)
+	#pragma omp parallel for shared(pbar,field)
 	for (unsigned ydot = 0; ydot < field.columns; ydot++) {
 		for (unsigned xdot = 0; xdot < field.lines; xdot++) {
 			Point t = field.transform(xdot, ydot);

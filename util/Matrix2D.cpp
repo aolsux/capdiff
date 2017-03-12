@@ -166,15 +166,18 @@ Matrix2D &Matrix2D::operator=(const Matrix2D &ref)
 
 istream& operator >>(istream &is, Matrix2D &obj) {
 	delete obj.data;
-	char c;
+	char c = '\n';
 	is.seekg(-1,ios::end);
 	is.get(c);
+	is.seekg(0,ios::beg);
+	obj.lines = count(istreambuf_iterator<char> (is.rdbuf()), istreambuf_iterator<char> (), '\n') + (c=='\n'?0:1);
+	std::cout << "found " << obj.lines << " newlines" << std::endl;
 	is.seekg(0);
-	obj.lines = count(istreambuf_iterator<char> (is), istreambuf_iterator<char> (), '\n')+(c=='\n'?0:1);
-	is.seekg(0);
-	unsigned commas = count(istreambuf_iterator<char> (is), istreambuf_iterator<char> (), ',');
+	unsigned commas = count(istreambuf_iterator<char> (is.rdbuf()), istreambuf_iterator<char> (), ',');
+	std::cout << "found " << commas << "commas" << std::endl;
 	is.seekg(0);
 	unsigned spaces= count(istreambuf_iterator<char> (is), istreambuf_iterator<char> (), ' ');
+	std::cout << "found " << spaces << " spaces" << std::endl;
 	obj.columns = max(commas,spaces) / obj.lines +1;
 	char delim = (commas>spaces?',':' ');
 	obj.data = new double[obj.lines*obj.columns];
@@ -182,8 +185,8 @@ istream& operator >>(istream &is, Matrix2D &obj) {
 	cout << "Using columns delimiter '"<<delim<<"'. Found "<<(c=='\n'?"NO ":"")<<" newline at end of file."<<endl;
 	is.seekg(0);
 	for (unsigned l = 0; l < obj.lines; l++)
-			for (unsigned c = 0; c < obj.columns; c++){
-				is>>obj(l, c);
+			for (unsigned c = 0; c < obj.columns; c++){	
+				is>>obj(l, c);				
 				is.ignore(1);
 			}
 	return is;

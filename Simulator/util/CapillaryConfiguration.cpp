@@ -167,6 +167,8 @@ CapillaryConfiguration CapillaryConfiguration::readFile(string filename){
 	CapillaryConfiguration c;
 	ifstream stream(filename.c_str());
 	stream >> m;
+	std::cout << m.lines << "x" << m.columns << std::endl;
+	std::cout << m << std::endl;
 	for (unsigned i = 0; i < m.lines; i++) {
 		Capillary2D cap(Point(m(i,0),m(i,1)),m(i,2),m(i,3));
 		//cout << "\t#" << i << ": x = " << cap.getLocation().x << "\ty = " << cap.getLocation().y << "\tr = " << cap.getRadius() << "\ta=" << cap.getAngle() << endl;

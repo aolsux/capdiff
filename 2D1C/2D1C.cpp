@@ -66,10 +66,12 @@ int main(int argc, char* argv[]) {
 			intermediate_steps = atoi(argv[a + 1]);
 		}
 	}
-	ifstream file(plasma_file.c_str());
-	Matrix2D charge_matrix(1,1);
+	cout << "Plasma file: " << plasma_file << endl;
+	ifstream file(plasma_file.c_str());	
+	Matrix2D charge_matrix(200,3);
 	file>>charge_matrix;
 	file.close();
+	std::cout << charge_matrix << std::endl;
 
 	vector<Charge> charges;
 	for (unsigned u = 0; u < charge_matrix.lines; u++) {
@@ -88,7 +90,7 @@ int main(int argc, char* argv[]) {
 
 	Plasma2D plasma(charges, width);
 	double last_energy = plasma.getEnergy();
-	double current_energy = 0;
+	double current_energy = last_energy;
 	unsigned accepts = 0;
 	writePlasmaFile(prefix + ".csv", plasma);
 
@@ -147,8 +149,8 @@ int main(int argc, char* argv[]) {
 				current_energy = last_energy;
 				accepts = 0;
 			}
-			energy_flow(u*i+equilibrate,0)=current_energy;
-			energy_flow(u*i+equilibrate,1)=accepts;
+			energy_flow(u*intermediate_steps + i + equilibrate,0)=current_energy;
+			energy_flow(u*intermediate_steps + i + equilibrate,1)=accepts;
 
 			pbar->progress();
 		}
