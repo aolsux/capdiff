@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project(capdiff)
 
-find_package(Boost COMPONENTS thread system filesystem)
+find_package(Boost COMPONENTS thread system filesystem program_options)
 
 # add OpenMP compiler flag
 # enable optimization

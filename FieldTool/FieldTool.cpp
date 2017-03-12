@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <thread>
 #include <omp.h>
 #include <limits>
 
@@ -16,173 +17,105 @@
 #include <util/Compartement.h>
 #include <util/IOManager.h>
 
+#include <boost/format.hpp>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/variables_map.hpp>
+#include <boost/program_options/parsers.hpp>
+
 #include <Progress.h>
 #include <PerfClock.h>
 
 using namespace std;
+namespace po = boost::program_options;
 
 
-PrecalculatedField2D calculateField(double cutoff, unsigned fieldRes, double width, double height);
+PrecalculatedField2D calculateField(const CapillaryConfiguration& caps, double cutoff, unsigned fieldRes, double width, double height, bool debug);
 void				 maskField(double cutOff);
 PrecalculatedField2D shrinkField(unsigned subsampleresolution);
 Matrix2D 			 makeHistogram(double omega_max, unsigned bins);
 CapillaryConfiguration mirrorCapillaries(CapillaryConfiguration caps, Rectangle rect, double cut_off);
-
-
-void printHelp();
 void printFieldStats(const PrecalculatedField2D &field);
-
-
-//omp
-unsigned nthreads = 1;
-
-//command line
-string flg_cutoff = "-cutoff", flg_res = "-resolution", flg_width = "-width", flg_height = "-height";
-string flg_inputCapillaryFile = "-load-capillaries", flg_inputFieldFile = "-load-field";
-
-string flg_calculate = "-calculate";
-string flg_scale = "-scale";
-string flg_mask = "-mask";
-string flg_shrink = "-shrink";
-string flg_histo = "-histo";
-string flg_centered = "-centered";
-string flg_forceWrite = "-write";
-
-string flg_maskThreshold = "-mask-cutoff";
-
-
-const string flg_help1 = "--help", flg_help2 = "-h", flg_help3 = "--h", flg_help4 = "-help";
-
-ProgressMonitor pmon;
-
-//Global Variables
-PrecalculatedField2D field, masked_field;
-CapillaryConfiguration capillaries;
-int zeros=-1;
-
-//parameters changeable by comandline
-double		width				= 20;
-double		height				= 20;
-double		cutoff				= 0;
-double		field_res			= 100E6;
-double		mask_threshold		= 0;
-double		histo_omega_cutoff	= numeric_limits<double>::max();
-unsigned	histo_bins			= 10000;
-unsigned	shrink_factor		= 1;
-double		scaling				= 1;
-bool        force_write         = false;
-string capillaryFileName = "";
-string fieldFileName = "";
 
 int main(int argc, char* argv[])
 {
-	MPICommunicator mpicomm(argc, argv);
-	bool calculate			= false;
-	bool shrink				= false;
-	bool mask				= false;
-	bool scale				= false;
-	bool histo				= false;
-	bool centered			= false;
-	bool loadField			= false;
-	bool loadCapillaries	= false;
-	bool mask_threshold_set = false;
-	bool width_set			= false;
-	bool height_set			= false;
+	MPICommunicator mpicomm(argc, argv);	
+	
+	po::options_description desc("Allowed options");
+	desc.add_options()
+		("help", "produce help message")
+		("width", po::value<double>(), "Width (x-dimension size) of calculated field. [µm]")
+		("height",po::value<double>(), "Height (y-dimensional size) of calculated field. [µm]")
+		("cutoff",po::value<double>(), "Cutoff-Radius for re-sampling of capillaries around the field. [µm]")
+		("resolution",po::value<double>(), "Target-Resolution of calculated field. [points per µm]")
+		("debug",po::bool_switch()->default_value(false), "generate various additional outputs (also some files)")
+		("threads",po::value<int>()->default_value(std::thread::hardware_concurrency()), "Number of threads to use for calculation\n"
+																						 "(defaults to # of cpus of machine)")
+		("calculate", po::value<std::string>(),"Generate a field from the given capillary configuration.\n"
+											   "Filename to the capillary file to calculate the field for.\n"
+											   "  NOTE: the cappillary file needs to follow this format:\n"
+											   "     x,y,radius,angle\n"
+											   "  where x,y, and radius are given in METERS\n")
+		;
 
+	po::variables_map vm;
+	po::store(po::parse_command_line(argc, argv, desc), vm);
+	po::notify(vm);    
+	
+	if(vm.count("width"))
+		std::cout << "given width: " << vm["width"].as<double>() << std::endl;
 
-	//iterate over params and search for field params
-	for (int a = 0; a < argc; a++) {
-		if ((flg_help1.compare(argv[a]) == 0) | (flg_help2.compare(argv[a]) == 0) | (flg_help3.compare(argv[a]) == 0) | (flg_help4.compare(argv[a]) == 0)) {
-			printHelp();
-			return 0;
-		} else if (flg_calculate.compare(argv[a]) == 0 ) {
-			calculate = true;
-		} else if (flg_cutoff.compare(argv[a]) == 0 && a + 1 < argc) {
-			cutoff = atof(argv[a + 1]) * 1E-6;
-		} else if (flg_res.compare(argv[a]) == 0 && a + 1 < argc) {
-			field_res = atoi(argv[a + 1]) * 1E6;
-		} else if (flg_width.compare(argv[a]) == 0 && a + 1 < argc) {
-			width = atof(argv[a + 1]) * 1E-6;
-			width_set=true;
-		} else if (flg_height.compare(argv[a]) == 0 && a + 1 < argc) {
-			height = atof(argv[a + 1]) * 1E-6;
-			height_set=true;
-		} else if (flg_inputCapillaryFile.compare(argv[a]) == 0 && a + 1 < argc) {
-			capillaryFileName = argv[a + 1];
-			loadCapillaries = true;
-		} else if (flg_inputFieldFile.compare(argv[a]) == 0 && a + 1 < argc) {
-			fieldFileName = argv[a + 1];
-			loadField = true;
-		} else if (flg_shrink.compare(argv[a]) == 0 && a + 1 < argc) {
-			shrink_factor = atoi(argv[a + 1]);
-			shrink = true;
-		} else if (flg_mask.compare(argv[a]) == 0) {
-			mask = true;
-		} else if (flg_maskThreshold.compare(argv[a]) == 0 && a + 1 < argc) {
-			mask_threshold = atof(argv[a + 1]);
-			mask_threshold_set = true;
-		} else if (flg_scale.compare(argv[a]) == 0 && a + 1 < argc) {
-			scaling = atof(argv[a + 1]);
-			scale = true;
-		} else if (flg_centered.compare(argv[a]) == 0) {
-			centered=true;
-		}else if (flg_forceWrite.compare(argv[a]) == 0) {
-			force_write=true;
-		} else if (flg_histo.compare(argv[a]) == 0 ) {
-			histo = true;
-			if(a + 1 < argc)
-			{
-				histo_bins = (atoi(argv[a+1])==0 ? 10000 : atoi(argv[a+1]));
-				if((histo_bins!=0) && (a + 2 < argc))
-					histo_omega_cutoff = (atof(argv[a+2])==0 ? numeric_limits<double>::max() : atof(argv[a+2]));
-			}
-		}
-
+	if (vm.count("help")) {
+		cout << "========================================================================" << endl;
+		cout << "Tool for calculating and refactoring capillary fields. (c) Martin Rueckl" << endl;
+		cout << "========================================================================" << endl;
+		cout << desc << "\n";
+		return 1;
 	}
-#pragma omp parallel
+
+	omp_set_dynamic(0);     // Explicitly disable dynamic teams
+	omp_set_num_threads(vm["threads"].as<int>()); // Use n threads for all consecutive parallel regions
+	
+	// generate field from capillary configuration
+	if(vm.count("calculate"))
 	{
-		if (omp_get_thread_num() == 0) nthreads = omp_get_num_threads();
-	}
-
-	if (!calculate && !loadField)					throw MyException("Cannot do anything without field.");
-	if (!loadCapillaries && !loadField) 			throw MyException("No field or capillary file given.");
-	if (!mask && mask_threshold_set) 				throw MyException("Cannot use -mask-cutoff without masking command.");
-	if (calculate && !loadCapillaries)				throw MyException("Cannot calculate without capillary file.");
-	if (calculate && (!width_set || !height_set))	throw MyException("Cannot calculate without width/height.");
-	if (mask && (!width_set || !height_set))		throw MyException("Cannot mask without width/height.");
-	if (mask && (!loadField || !loadCapillaries)) 	throw MyException("Cannot mask field without both, capillary file and field file.");
-	if (histo && (!width_set || !height_set))						throw MyException("Cannot make a histogram without width/height.");
-	if (histo && (!(loadField||calculate) || !loadCapillaries)) 	throw MyException("Cannot make a histogram without both, capillary file and field file.");
-
-
-	if(loadCapillaries)
-		capillaries = CapillaryConfiguration::readFile(capillaryFileName);
-
-	//either generate field from capillary configuration or load it from file
-	if(calculate){
-		cout << "Calculating Field for "<< capillaryFileName <<
-				" (width=" << width <<
-				", height=" << height <<
-				", resolution=" << field_res <<
-				", cutoff=" << cutoff << ")"<<endl;
-		field = calculateField(cutoff, field_res, width, height);
-		string fieldFileName = capillaryFileName.substr(0,capillaryFileName.find('.')) +
+		if (!vm.count("width") || !vm.count("height") || !vm.count("resolution") || !vm.count("cutoff"))
+		{
+			std::cerr << "Error: the --calculate option requires --width, --height, --cutoff, and --resolution" << std::endl;
+			std::cerr << "Usage:" << std::endl << desc << std::endl;			
+			return 1;
+		}
+		
+		double width = vm["width"].as<double>();
+		double height = vm["height"].as<double>();
+		double resolution = vm["resolution"].as<double>();
+		double cutoff = vm["cutoff"].as<double>();
+		std::string capfile = vm["calculate"].as<std::string>();
+		
+		CapillaryConfiguration capillaries = CapillaryConfiguration::readFile(capfile);
+		
+		std::cout << boost::format("Calculating Field for %s (width=%f, height=%f, resolution=%f, cutoff=%f)") 
+						% capfile % width % height % resolution % cutoff << std::endl;
+		auto field = calculateField(capillaries, cutoff, resolution, width, height, vm["debug"].as<bool>());
+		std::string fieldFileName = capfile.substr(0,capfile.find('.')) +
 				"_width=" + std::to_string(width)+
-				"_height=" +  std::to_string(height)+
-				"_res=" +  std::to_string(field_res)+
+				"_height=" + std::to_string(height)+
+				"_res=" +  std::to_string(resolution)+
 				"_cor=" +  std::to_string(cutoff)+".csv";
-		cout << "Writing Field-File " << fieldFileName << " ...";
+		std::cout << "Writing Field-File " << fieldFileName << " ...";
 		fstream out_file(fieldFileName.c_str(), ios::out);
 		out_file << field;
 		out_file.close();
 		cout << "Done" << endl;
-	} else {
-		if(centered)
-			field = PrecalculatedField2D::readFile(fieldFileName, Point(-width/2,-height/2), Point(width/2, height/2));
-		else
-			field = PrecalculatedField2D::readFile(fieldFileName, Point(0,0), Point(width, height));
+		return 0;
+	} 
+	else
+	{
+		std::cerr << "Dont know what to do... give either --calculate, or others (todo implement)" << std::endl;
+		std::cerr << "Usage:\n" << desc << std::endl;
+		return 1;
 	}
-
+	
+	/*
 	//make lower resolution field
 	if (shrink){
 		cout << "Shrinking " << fieldFileName << " by " << shrink_factor << endl;
@@ -229,13 +162,14 @@ int main(int argc, char* argv[])
 		histo_file.close();
 		cout << "Done" << endl;
 	}
-
+	*/
 	return 0;
 }
 
+/*
 Matrix2D makeHistogram(double omega_cutoff, unsigned histo_bins)
 {
-	/*Mirror capillaries with small cutoff radius in order to mask only "half circles" on the edge of the simulation environment.*/
+	//Mirror capillaries with small cutoff radius in order to mask only "half circles" on the edge of the simulation environment.
 	CapillaryConfiguration c_conf = mirrorCapillaries(capillaries, field, (field.getUpperRightCorner()-field.getLowerLeftCorner()).abs()*1.1);
 	fstream capillary_file("mirrored_caps.csv", ios::out);
 	capillary_file << c_conf;
@@ -303,7 +237,7 @@ Matrix2D makeHistogram(double omega_cutoff, unsigned histo_bins)
 				pbar->progress();
 			}
 		}
-		/*Accumulate the private thread histograms...*/
+		//Accumulate the private thread histograms...
 		omp_set_lock(&my_lock);
 		histo		+= thread_private_histo;
 		collisions	+= thread_private_collisions;
@@ -317,11 +251,13 @@ Matrix2D makeHistogram(double omega_cutoff, unsigned histo_bins)
 	pbar->finish();
 	return histo;
 }
+*/
 
+/*
 void maskField(double cutOff)
 {
 	if(zeros!=-1)return;
-	/*Mirror capillaries with small cutoff radius in order to mask only "half circles" on the edge of the simulation environment.*/
+	//Mirror capillaries with small cutoff radius in order to mask only "half circles" on the edge of the simulation environment.
 	CapillaryConfiguration c_conf = mirrorCapillaries(capillaries, field, (field.getUpperRightCorner()-field.getLowerLeftCorner()).abs()*1.1);
 	zeros		 = 0;
 	masked_field = field;
@@ -348,8 +284,9 @@ void maskField(double cutOff)
 	}
 	pbar->finish();
 	cout << "set: " << zeros << " point to zero!" << endl;
-}
+}*/
 
+/*
 PrecalculatedField2D shrinkField(unsigned subsample)
 {
 	unsigned lines=field.getLines()/subsample;
@@ -363,53 +300,9 @@ PrecalculatedField2D shrinkField(unsigned subsample)
 	}
 	return small;
 }
+*/
 
-void printHelp()
-{
-	cout << "========================================================================" << endl;
-	cout << "Tool for calculating and refactoring capillary fields. (c) Martin Rueckl" << endl;
-	cout << "========================================================================" << endl;
-	cout << "  Options:" << endl;
-	cout << "\t" << flg_res <<  				" n\t\t: Target-Resolution of calculated field. [points per um]" << endl;
-	cout << "\t" << flg_width << 				" w\t\t: Width (x-dimensional size) of calculated field. [um]" << endl;
-	cout << "\t" << flg_height <<   			" h\t\t: Height (y-dimensional size) of calculated field. [um]" << endl;
-	cout << "\t" << flg_cutoff << 				" c\t\t: Cutoff-Radius c for re-sampling of the given capillaries. [um]" << endl;
-	cout << "\t" << flg_inputCapillaryFile <<  " path\t: Filename/Path of capillary-file." << endl;
-	cout << "\t" << flg_inputFieldFile << 	 " path\t\t: Filename for field input." << endl;
-	cout << "\t" << flg_centered <<				"  \t\t: Assume the given field and capillaries are centered around the origin."<<endl;
-	cout << "\t" << flg_forceWrite <<			"    \t: Force write of temporarily generated fields and other data."<<endl;
-
-	cout << "  Commands:" << endl;
-
-	cout << "\t" << flg_calculate << " s\t\t: Calculate the field for a given capillary configuration." << endl;
-	cout << "\t\t\t\t  (Needs: " << flg_inputCapillaryFile << ", "
-								 << flg_width << ", "
-								 << flg_height << ", "
-								 << flg_res<< ", "
-								 << flg_cutoff << ")" << endl;
-
-	cout << "\t" << flg_shrink << " s\t\t: Create a file with smaller resolution. (Only take one point in s)" << endl;
-
-	cout << "\t" << flg_mask << "\t\t\t: Mask the Field with a given capillary configuration." << endl;
-	cout << "\t\t\t\t  (Needs: " << flg_inputCapillaryFile << ", "
-								 << flg_inputFieldFile << ", "
-								 << flg_width << ", "
-								 << flg_height << ")" << endl;
-
-	cout << "\t" << flg_histo << " b c\t\t\t: Make a histogram of the fields amplitudes, containing b bins and max frequency c. If no c and b are given, c=10000, no freuquency cap. The capillary area is excluded." << endl;
-	cout << "\t\t\t\t  (Needs: " << flg_inputCapillaryFile << ", "
-								 << flg_inputFieldFile << ", "
-								 << flg_width << ", "
-								 << flg_height << ")" << endl;
-
-	cout << "\t\t\t\t  (Optional: " << flg_maskThreshold << " for a cutoff of field amplitudes)" << endl;
-
-	cout << "\t" << flg_scale << " s\t\t: Scale fields amplitude by s." << endl;
-}
-
-
-
-PrecalculatedField2D calculateField(double cutOff, unsigned fieldRes, double width, double height)
+PrecalculatedField2D calculateField(const CapillaryConfiguration& capillaries, double cutOff, unsigned fieldRes, double width, double height, bool force_write)
 {
 	CapillaryConfiguration conf = mirrorCapillaries(capillaries,Rectangle(Point(0,0),Point(width, height)), cutOff);
 	if (force_write)
@@ -418,7 +311,8 @@ PrecalculatedField2D calculateField(double cutOff, unsigned fieldRes, double wid
 		mconf << conf;
 	}
 	PrecalculatedField2D field(Point(0,0),Point(width, height), 1. / fieldRes);
-	ProgressBar *pbar=new ProgressBar("Calculating field (" + util::num2str(nthreads) + " CPUs)", field.columns * field.lines);
+	ProgressMonitor pmon;
+	ProgressBar *pbar=new ProgressBar("Calculating field (" + std::to_string(std::thread::hardware_concurrency()) + " CPUs)", field.columns * field.lines);
 	pmon.addProgressBar(pbar);
 	#pragma omp parallel for shared(pbar,field)
 	for (unsigned ydot = 0; ydot < field.columns; ydot++) {
